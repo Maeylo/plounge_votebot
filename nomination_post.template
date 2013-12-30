@@ -22,6 +22,6 @@ Nominations ended at {{time(state['nominations_ended_at'])}}
 %if True:
 \[[Vote History]({{output_url}}/{{target}}_history.txt)] \[[Current Votes]({{output_url}}/{{target}}_votes.txt)\]
 %end
-\[[Source code](http://www.github.com/)\] ^([Bot made by rcxdude])
+\[[Source code](https://github.com/rcxdude/plounge_votebot)\] ^([Bot made by rcxdude])
 
 Don't send any questions about the game to me!, send them to /u/PloungeMafia instead
