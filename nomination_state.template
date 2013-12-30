@@ -1,0 +1,7 @@
+%vote_state = state['nominations'][post.id]
+%for nominee, nomination in vote_state['current_nominations'].items():
+({{time(nomination['timestamp'])}}): {{fix_case(nominee)}} nominated by {{fix_case(nomination['by'])}}
+%for voter, vote in vote_state['current_votes'][nominee].items():
+({{time(vote['timestamp'])}}):    {{fix_case(voter)}} votes {{"yay" if vote['lynch'] else "nay"}}
+%end
+%end

@@ -1,0 +1,27 @@
+[](###nominate###)
+I am your friendly neighbourhood lynch vote bot!
+
+Please reply to this post with \*\*Nominate: player\*\* to nominate a player to go on trial (e.g. **Nominate: PloungeMafiaVoteBot**). 
+You can include any other information in your post, such as why you are nominating them.
+
+%if target:
+| Player | Yays | Nays |
+|:-------|-----:|-----:|
+%post_state = state['nominations'][target]
+%for nomination in sort_nominations(post_state):
+%b = "**" if nomination.up_for_trial else ""
+| [{{b}}{{fix_case(nomination.player)}}{{b}}]({{state['nominations_url']}}/{{nomination.vote_post_id}}) | {{b}}{{nomination.yays}}{{b}} | {{b}}{{nomination.nays}}{{b}} | 
+%end
+
+%end
+
+%if state['nominations_ended_at']:
+Nominations ended at {{time(state['nominations_ended_at'])}}
+%end
+
+%if True:
+\[[Vote History]({{output_url}}/{{target}}_history.txt)] \[[Current Votes]({{output_url}}/{{target}}_votes.txt)\]
+%end
+\[[Source code](http://www.github.com/)\] ^([Bot made by rcxdude])
+
+Don't send any questions about the game to me!, send them to /u/PloungeMafia instead

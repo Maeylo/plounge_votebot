@@ -1,0 +1,26 @@
+
+[](###vote {{target}}###)
+
+**{{fix_case(target)}}** is on trial! Vote on their fate by replying to this comment with **lynch** or **pardon**
+
+If you wish to retract your vote, you may \~\~~~strikethough~~\~\~ your old vote.
+
+%if post:
+%votes = state['votes'][post.id]['current_votes']
+%yays = sum([x['lynch'] for x in votes.values()])
+%nays = len(votes.values()) - yays
+
+Lynch: {{yays}}
+Pardon: {{nays}}
+
+%if state['votes_ended_at']:
+Voting ended at {{time(state['votes_ended_at'])}}
+%end
+
+%if False:
+\[[Vote History]({{output_url}}/{{post.id}}_history.txt)] \[[Current Votes]({{output_url}}/{{post.id}}_votes.txt)\]
+%end
+%end
+\[[Source code](http://www.github.com/)\] ^([Bot made by rcxdude])
+
+Don't send any questions about the game to me!, send them to /u/PloungeMafia instead

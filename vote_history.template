@@ -1,0 +1,23 @@
+%if post.id in state['nominations']:
+%   vote_state = state['nominations'][post.id]
+%   vote_type = 'nomination'
+%elif post.id in state['votes']:
+%   vote_state = state['votes'][post.id]
+%   vote_type = 'trial'
+%end
+%for vote in sorted(vote_state['vote_history'], key= lambda x: (x['time'], x['action'] == 'vote' and x['lynch'] == True)):
+%action = {'vote': 'voted', 'nominated': 'nominated', 'unvote' : 'removed their vote'}[vote['action']]
+%if vote_type == 'trial':
+%    target = vote['for']
+%    lynch_verb = {True : 'to lynch', False : 'to pardon'}[vote['lynch']]
+%else:
+%    if action == 'nominated':
+%        target = vote['on']
+%        lynch_verb = ""
+%    else:
+%        target = vote['for']
+%        lynch_verb = {True : 'for the trial of', False: 'against the trial of'}[vote['lynch']]
+%    end
+%end
+{{fix_case(vote['by'])}} {{action}} {{lynch_verb}} {{fix_case(target)}} at {{time(vote['time'])}}
+%end
