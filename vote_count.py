@@ -342,16 +342,19 @@ def get_nominations(nomination_post):
 Nomination = collections.namedtuple('Nomination', ['player', 'yays', 'nays', 'up_for_trial', 'vote_post_id', 'timestamp'])
 
 def sort_nominations(post_state): 
-    deadline = post_state['deadline'] if post_state['deadline'] else float('Inf')
-    sorted_nominations = post_state['current_nominations'].items()
-    sorted_nominations.sort(key = lambda x: x[1]['timestamp'])
-    n_trials = 0
-    nominations = []
-    for nominee, nomination in sorted_nominations:
+    def votes(nominee):
         vote_info = post_state['current_votes'][nominee].values()
         votes = [v['lynch'] for v in vote_info if v['timestamp'] < deadline]
         yays = sum(votes)
-        nays = len(votes) - sum(votes)
+        nays = len(votes) - yays
+        return yays, nays
+    deadline = post_state['deadline'] if post_state['deadline'] else float('Inf')
+    sorted_nominations = post_state['current_nominations'].items()
+    sorted_nominations.sort(key = lambda x: (votes(x[0])[0] - votes(x[0])[1], x[1]['timestamp']))
+    n_trials = 0
+    nominations = []
+    for nominee, nomination in sorted_nominations:
+        yays, nays = votes(nominee)
         up_for_trial = n_trials < 5 and yays > nays
         if up_for_trial:
             n_trials += 1
