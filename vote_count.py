@@ -259,7 +259,7 @@ def acknowledge_nomination(comment, target):
             return potential_bot_comment
     with open('nomination_ack.template') as post_template_fd:
         template = simpletemplate.SimpleTemplate(post_template_fd.read())
-        post_contents = template.render(state = state, target = target)
+        post_contents = template.render(state = state, target = target, fix_case = fix_case)
     l.info("Acknowledging nomination for {}".format(target))
     return comment.reply(post_contents)
 
