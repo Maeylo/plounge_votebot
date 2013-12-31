@@ -147,14 +147,14 @@ def get_bot_post(submission_url, tag = None):
 nominate_re = re.compile("""
     (?P<strikethrough>~*)     #stricken through votes don't count
       [^*~]*
-        \*\*                  #must be bold
+        (\*\*|__)             #must be bold
             [^*]*?            #Can preface with whatever
             (nominate|vote)   #vote or nominate is for clarity only, they have the same effect
             \s*:?\s*          #could be a colon or not
             (/u/)?            #might start with /u/
             (?P<user>[^*\s]+) #username may consist of any characters except whitespace and *
             \s*
-        \*\*
+        (\*\*|__)
       [^*~]*
     (?P<strikethrough_1>~*)
 """, re.VERBOSE)
@@ -162,7 +162,7 @@ nominate_re = re.compile("""
 vote_re = re.compile("""
     (?P<strikethrough>~*)
       [^*~]*
-        \*\*
+        (\*\*|__)             #must be bold
         \s*
         (vote)?:?
         \s*
@@ -170,7 +170,7 @@ vote_re = re.compile("""
          yay|lynch|yes|
          nay|pardon|no|)
         \s*
-        \*\*
+        (\*\*|__)
       [^*~]*
     (?P<strikethrough_1>~*)
 """, re.VERBOSE)
