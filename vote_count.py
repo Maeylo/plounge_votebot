@@ -497,12 +497,21 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     l.setLevel(debug_levels[args.log_level])
-    l.debug("Starting up")
+    l.info("Starting up")
     r = praw.Reddit(user_agent = "VoteCountBot by rcxdude")
-    l.debug("Logging in")
 
-    r.login(bot_username, bot_password)
+    while True:
+        l.info("Attempting login")
+        try:
+            r.login(bot_username, bot_password)
+            break
+        except Exception as e:
+            l.error(traceback.format_exc())
+            time.sleep(60 * args.update_delay)
+
     load_state(args.state)
+
+    l.info("Logged in")
 
     while True:
         try:
