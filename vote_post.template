@@ -21,6 +21,6 @@ Voting ended at {{time(state['votes_ended_at'])}}
 \[[Vote History]({{output_url}}/{{post.id}}_history.txt)] \[[Current Votes]({{output_url}}/{{post.id}}_votes.txt)\]
 %end
 %end
-\[[Source code](http://www.github.com/)\] ^([Bot made by rcxdude])
+\[[Source code](https://github.com/rcxdude/plounge_votebot)\] ^([Bot made by rcxdude])
 
 Don't send any questions about the game to me!, send them to /u/PloungeMafia instead
