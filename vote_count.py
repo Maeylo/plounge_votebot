@@ -243,7 +243,7 @@ def get_votes(vote_post, target_player, old_votes, deadline):
         if deadline and timestamp > deadline:
             continue
 
-        #if multiple votes are present, count the earliest one
+        #if multiple votes are present, count the latest one
         if (caster not in votes) or votes[caster]['timestamp'] > timestamp:
             votes[caster] = {"for" : target_player,
                              "lynch" : vote_result,
