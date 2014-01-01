@@ -126,19 +126,73 @@ def process_commands():
     l.debug("Done processing commands, updating state")
     state = new_state
 
+def chunk(l,n):
+    for i in range(0,len(l),n):
+        yield l[i:i+n]
+
+#replace_more_comments is broken because MoreComments.comments() is broken.
+#This is broken I think because the reddit API is broken and doesn't return an
+#additional morecomments object when it should. This also affects the website
+def get_more_comments(self, update = True):
+    if self._comments is not None:
+        return self._comments
+
+    all_children = [x for x in self.children if 't1_{}'.format(x)
+                    not in self.submission._comments_by_id]
+
+    self._comments = []
+    if not all_children:
+        return self._comments
+
+    for children in chunk(all_children, 15):
+        data = {'children': ','.join(children),
+                'link_id': self.submission.fullname,
+                'r': str(self.submission.subreddit)}
+
+        if self.submission._comment_sort:
+            data['where'] = self.submission._comment_sort
+
+        url = self.reddit_session.config['morechildren']
+        response = self.reddit_session.request_json(url, data = data)
+        self._comments.extend(response['data']['things'])
+    
+    if update:
+        for comment in self._comments:
+            comment._update_submission(self.submission)
+
+    return self._comments
+
+#replace_more_comments is broken (plus makes more requests than we need)
+def all_comments(replies):
+    more_comments = []
+    for reply in replies:
+        if isinstance(reply, praw.objects.MoreComments):
+            more_comments.append(reply)
+        else:
+            yield reply
+    while more_comments:
+        more = more_comments.pop()
+        maybe_more = get_more_comments(more)
+        for additional_comment in get_more_comments(more):
+            if isinstance(additional_comment, praw.objects.MoreComments):
+                more_comments.append(additional_comment)
+            else:
+                yield additional_comment
+
 def get_bot_post(submission_url, tag = None):
     l.debug("Fetching submission from {}".format(submission_url))
     submission = praw.objects.Submission.from_url(r, submission_url)
-    submission.replace_more_comments(limit = None)
     l.debug("Got submission")
     comment_to_update = None
-    for comment in submission.comments:
-        if comment.author.name == bot_username:
+    for comment in all_comments(submission.comments):
+        if comment.author and comment.author.name == bot_username:
             if tag is None:
                 comment_to_update = comment
+                break
             else:
                 if comment.body.lower().find('###{}###'.format(tag.lower())) != -1:
                     comment_to_update = comment
+                    break
 
     if comment_to_update:
         l.debug("Got comment")
@@ -220,9 +274,13 @@ def get_edited_time(comment):
 def get_votes(vote_post, target_player, old_votes, deadline):
     valid_names = {x.lower() for x in state['alive_players']}
     votes = {}
-    for vote_comment in vote_post.replies:
+    for vote_comment in all_comments(vote_post.replies):
         vote_result = get_vote_from_post(vote_comment.body)
         if vote_result is None:
+            #l.debug("Did not get vote result from {}".format(vote_comment.body))
+            continue
+
+        if not vote_comment.author:
             continue
 
         caster = vote_comment.author.name.lower()
@@ -252,7 +310,7 @@ def get_votes(vote_post, target_player, old_votes, deadline):
     return votes
 
 def acknowledge_nomination(comment, target):
-    for potential_bot_comment in comment.replies:
+    for potential_bot_comment in all_comments(comment.replies):
         if potential_bot_comment.author.name == bot_username:
             #TODO: more checking here
             l.debug("Found old acknowledge post for {}".format(target))
@@ -271,9 +329,11 @@ def get_nominations(nomination_post):
     nomination_state = new_state['nominations'][nomination_post.id]
     nomination_state['deadline'] = new_state['nominations_ended_at']
     nominations = nomination_state['current_nominations']
-    for nomination_comment in nomination_post.replies:
+    for nomination_comment in all_comments(nomination_post.replies):
         nominee = get_nomination_from_post(nomination_comment.body, valid_names)
         if not nominee:
+            continue
+        if not nomination_comment.author:
             continue
         caster = nomination_comment.author.name.lower()
         if caster not in valid_names:
@@ -309,8 +369,8 @@ def get_nominations(nomination_post):
     for nominee, nomination in nominations.items():
         by_acks_id[nomination['ack_id']] = nomination
 
-    for nomination_comment in nomination_post.replies:
-        for ack_comment in nomination_comment.replies:
+    for nomination_comment in all_comments(nomination_post.replies):
+        for ack_comment in all_comments(nomination_comment.replies):
             if ack_comment.id in by_acks_id:
                 nomination = by_acks_id[ack_comment.id]
                 nominee = nomination['for']
@@ -335,6 +395,7 @@ def get_nominations(nomination_post):
                                          "for" : vote['for'],
                                          "time" : timestamp})
                 nomination_state['vote_history'] = vote_history
+                break
 
     state = new_state
     l.debug("Done counting nominations")
