@@ -350,7 +350,7 @@ def sort_nominations(post_state):
         return yays, nays
     deadline = post_state['deadline'] if post_state['deadline'] else float('Inf')
     sorted_nominations = post_state['current_nominations'].items()
-    sorted_nominations.sort(key = lambda x: (votes(x[0])[0] - votes(x[0])[1], x[1]['timestamp']))
+    sorted_nominations.sort(key = lambda x: (votes(x[0])[1] - votes(x[0])[0], x[1]['timestamp']))
     n_trials = 0
     nominations = []
     for nominee, nomination in sorted_nominations:
