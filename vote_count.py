@@ -259,8 +259,8 @@ def compare_dicts(old, new):
     old_items = set([(k,) + tuple(v.items()) for k,v in old.iteritems()])
     new_items = set([(k,) + tuple(v.items()) for k,v in new.iteritems()])
 
-    additions = old_items.difference(new_items)
-    removals = new_items.difference(old_items)
+    additions = new_items.difference(new_items)
+    removals = old_items.difference(old_items)
 
     additions = {i[0]: dict(i[1:]) for i in additions}
     removals = {i[0]: dict(i[1:]) for i in removals}
@@ -295,7 +295,7 @@ def get_votes(vote_post, target_player, old_votes, deadline):
         #as the time of the original vote
         if caster in old_votes: 
             old_vote = old_votes[caster]
-            if old_vote and old_vote["lynch"] == vote_result:
+            if old_vote["lynch"] == vote_result:
                 timestamp = old_vote["timestamp"]
 
         if deadline and timestamp > deadline:
@@ -377,7 +377,7 @@ def get_nominations(nomination_post):
                 old_votes = copy.deepcopy(nomination_state['current_votes'][nominee])
                 votes = get_votes(ack_comment, nominee, old_votes, state['nominations_ended_at'])
                 nomination_state['current_votes'][nominee] = votes
-                additions, removals = compare_dicts(votes, old_votes)
+                additions, removals = compare_dicts(old_votes, votes)
                 vote_history = nomination_state.get('vote_history', [])
                 if not vote_history:
                     vote_history = []
@@ -438,7 +438,7 @@ def count_votes(vote_post, nominee):
     votes_state = new_state['votes'][vote_post.id]
     votes = get_votes(vote_post, nominee, old_votes, state['votes_ended_at'])
 
-    additions, removals = compare_dicts(votes, old_votes)
+    additions, removals = compare_dicts(old_votes, votes)
     vote_history = votes_state.get('vote_history', [])
     if not vote_history:
         vote_history = []
