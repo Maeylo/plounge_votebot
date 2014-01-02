@@ -3,6 +3,7 @@
 *.json
 repos
 praw
+pytz
 requests
 test
 creds.py

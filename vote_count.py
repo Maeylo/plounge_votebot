@@ -5,6 +5,7 @@ import praw
 import json
 import copy
 import time
+import pytz
 import creds
 import os.path
 import logging
@@ -463,7 +464,7 @@ def count_votes(vote_post, nominee):
     l.debug("Done counting votes")
 
 def timestamp_to_date(timestamp):
-    return datetime.datetime.fromtimestamp(timestamp).isoformat() + "(UTC)" 
+    return datetime.datetime.fromtimestamp(timestamp, pytz.utc).isoformat() 
 
 def fix_case(username):
     if username in state['name_case_cache']:
