@@ -260,8 +260,8 @@ def compare_dicts(old, new):
     old_items = set([(k,) + tuple(v.items()) for k,v in old.iteritems()])
     new_items = set([(k,) + tuple(v.items()) for k,v in new.iteritems()])
 
-    additions = new_items.difference(new_items)
-    removals = old_items.difference(old_items)
+    additions = new_items.difference(old_items)
+    removals = old_items.difference(new_items)
 
     additions = {i[0]: dict(i[1:]) for i in additions}
     removals = {i[0]: dict(i[1:]) for i in removals}
