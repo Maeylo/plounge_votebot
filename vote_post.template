@@ -1,7 +1,7 @@
 
 [](###vote {{target}}###)
 
-**{{fix_case(target)}}** is on trial! Vote on their fate by replying to this comment with **lynch** or **pardon**
+**/u/{{fix_case(target)}}** is on trial! Vote on their fate by replying to this comment with **lynch** or **pardon**
 
 If you wish to retract your vote, you may \~\~~~strikethough~~\~\~ your old vote.
 
