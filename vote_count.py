@@ -131,6 +131,8 @@ def chunk(l,n):
     for i in range(0,len(l),n):
         yield l[i:i+n]
 
+known_dead_comments = set()
+
 #replace_more_comments is broken because MoreComments.comments() is broken.
 #This is broken I think because the reddit API is broken and doesn't return an
 #additional morecomments object when it should. This also affects the website
@@ -138,17 +140,20 @@ def get_more_comments(self, update = True):
     if self._comments is not None:
         return self._comments
 
-    all_children = [x for x in self.children if 't1_{}'.format(x)
-                    not in self.submission._comments_by_id]
+    children = {x for x in self.children if 't1_{}'.format(x)
+                    not in self.submission._comments_by_id}
 
     self._comments = []
-    if not all_children:
+    if not children:
         return self._comments
 
-    for children in chunk(all_children, 15):
+    n_attempts = 0
+    old_len = len(children)
+    while children:
         data = {'children': ','.join(children),
                 'link_id': self.submission.fullname,
                 'r': str(self.submission.subreddit)}
+
 
         if self.submission._comment_sort:
             data['where'] = self.submission._comment_sort
@@ -156,7 +161,15 @@ def get_more_comments(self, update = True):
         url = self.reddit_session.config['morechildren']
         response = self.reddit_session.request_json(url, data = data)
         self._comments.extend(response['data']['things'])
-    
+        children.difference_update(set([x.id for x in self._comments]))
+        n_attempts += 1
+        if n_attempts > 10 or old_len == len(children):
+            if not children.issubset(known_dead_comments):
+                l.error("Could not fetch comments {} after {} attempts".format(children, n_attempts))
+                known_dead_comments.update(children)
+            break
+        old_len = len(children)
+
     if update:
         for comment in self._comments:
             comment._update_submission(self.submission)
@@ -276,12 +289,11 @@ def get_votes(vote_post, target_player, old_votes, deadline):
     valid_names = {x.lower() for x in state['alive_players']}
     votes = {}
     for vote_comment in all_comments(vote_post.replies):
+        if not vote_comment.author:
+            continue
         vote_result = get_vote_from_post(vote_comment.body)
         if vote_result is None:
-            #l.debug("Did not get vote result from {}".format(vote_comment.body))
-            continue
-
-        if not vote_comment.author:
+            #l.warn("Did not get vote result from {}".format(vote_comment.body))
             continue
 
         caster = vote_comment.author.name.lower()
