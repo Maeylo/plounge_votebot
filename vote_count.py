@@ -236,7 +236,7 @@ vote_re = re.compile("""
         \s*
         (?P<vote>
          yay|lynch|yes|
-         nay|pardon|no|)
+         nay|pardon|no)
         \s*
         (\*\*|__)
       [^*~]*
