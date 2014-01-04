@@ -286,6 +286,8 @@ def get_edited_time(comment):
     offset = comment.created_utc - comment.created
     return comment.edited + offset if comment.edited else comment.created_utc
 
+known_invalid_votes = set()
+
 def get_votes(vote_post, target_player, old_votes, deadline):
     valid_names = {x.lower() for x in state['alive_players']}
     votes = {}
@@ -299,7 +301,9 @@ def get_votes(vote_post, target_player, old_votes, deadline):
 
         caster = vote_comment.author.name.lower()
         if caster not in valid_names:
-            l.info("{} cannot vote ({} can)!".format(caster, valid_names))
+            if vote_comment.id not in known_invalid_votes:
+                l.info("{} cannot vote ({} can)!".format(caster, valid_names))
+                known_invalid_votes.add(vote_comment.id)
             continue
 
         #Try to find the time the vote was cast
@@ -351,7 +355,9 @@ def get_nominations(nomination_post):
             continue
         caster = nomination_comment.author.name.lower()
         if caster not in valid_names:
-            l.info("{} cannot nominate ({} can)!".format(caster, valid_names))
+            if nomination_comment not in known_invalid_votes:
+                l.info("{} cannot nominate ({} can)!".format(caster, valid_names))
+                known_invalid_votes.add(nomination_comment.id)
             continue
 
         if nominee in nominations:
@@ -425,12 +431,14 @@ def sort_nominations(post_state):
         return yays, nays
     deadline = post_state['deadline'] if post_state['deadline'] else float('Inf')
     sorted_nominations = post_state['current_nominations'].items()
-    sorted_nominations.sort(key = lambda x: (votes(x[0])[1] - votes(x[0])[0], x[1]['timestamp']))
+    sorted_nominations.sort(key = lambda x: (x[0] not in state['dead_players'],
+                                             votes(x[0])[1] - votes(x[0])[0],
+                                             x[1]['timestamp']))
     n_trials = 0
     nominations = []
     for nominee, nomination in sorted_nominations:
         yays, nays = votes(nominee)
-        up_for_trial = n_trials < 5 and yays > nays
+        up_for_trial = nominee not in state['dead_players'] and n_trials < 5 and yays > nays
         if up_for_trial:
             n_trials += 1
         nominations.append(Nomination(player = nominee, 
