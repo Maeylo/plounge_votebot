@@ -61,6 +61,7 @@ def process_commands():
     death_actions = []
     alive_players = set(new_state["alive_players"])
     dead_players = set(new_state["dead_players"])
+    alive_players.difference_update(dead_players)
     for pm in pms:
         if pm.id == state['most_recent_pm_id']:
             break
@@ -89,7 +90,7 @@ def process_commands():
             new_state['votes_ended_at'] = None
             have_votes = True
         if command in ('alive', 'dead', 'gone'):
-            player_set = set([x for x in pm.body.split() if len(x) > 3])
+            player_set = set([x.lower() for x in pm.body.split() if len(x) > 3])
             if pm.subject == "alive":
                 l.info("Command: alive players")
                 def action():
