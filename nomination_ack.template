@@ -1,4 +1,4 @@
 [](/###Nomination {{target}}###)
-Valid nomination for {{fix_case(target)}} detected. Please vote by replying to this comment with **yay** or **nay**
+Valid nomination for /u/{{fix_case(target)}} detected. Please vote by replying to this comment with **yay** or **nay**
 
 (please put votes in \*\***bold**\*\*. If you wish to change your vote, please \~\~~~strikethrough~~\~\~ your old one)
