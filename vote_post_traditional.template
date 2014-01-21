@@ -1,0 +1,29 @@
+
+[](###vote###)
+
+I am your friendly neighbourhood lynch vote bot!
+
+Please respond to this comment with \*\***vote: player**\*\* in order to cast your vote for their lynch!
+You can also \*\***vote: no lynch**\*\* if you would prefer there to be no lynch today.
+
+Voting ends when a majority is reached. You cannot change your vote after this occurs.
+
+If you wish to retract your vote, you may \~\~~~strikethough~~\~\~ your old vote.
+
+%if post:
+%votes = state['votes'][post.id]['current_votes']
+%import collections
+%vote_counts = collections.Counter([v['lynch'] for v in votes.values()])
+%for target, count in sorted(vote_counts.items(), key = lambda x: x[1]):
+| Player | Votes |
+|:-------|------:|
+|{{fix_case(target)}}|{{count}}|
+%end
+
+%if state['votes_ended_at']:
+Voting ended at {{time(state['votes_ended_at'])}}
+%end
+
+\[[Vote History]({{output_url}}/{{post.id}}_history.txt)] \[[Current Votes]({{output_url}}/{{post.id}}_votes.txt)\]
+%end
+\[[Source code](https://github.com/rcxdude/plounge_votebot)\] ^([Bot made by rcxdude])

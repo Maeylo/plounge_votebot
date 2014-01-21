@@ -1,0 +1,5 @@
+%vote_state = state['votes'][post.id]
+%for action in sorted(vote_state['vote_history'], key = lambda x: x['time']):
+%act_type = {'vote': 'voted for', 'unvote' : 'removed their vote for'}[action['action']]
+{{time(action['time'])}} : {{fix_case(action['by'])}} {{act_type}} {{fix_case(action['for'])}}
+%end

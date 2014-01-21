@@ -1,0 +1,4 @@
+%vote_state = state['votes'][post.id]
+%for voter, vote in sorted(vote_state['current_votes'].items(), key = lambda x: (x[1]['lynch'], x[1]['timestamp'])):
+{{fix_case(voter)}} voted for {{fix_case(vote['lynch'])}} at {{time(vote['timestamp'])}}
+%end

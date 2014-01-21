@@ -30,16 +30,17 @@ debug_levels = {
 parser = argparse.ArgumentParser(description="Plounge mafia vote counting bot")
 parser.add_argument("--state", help="State file to use")
 parser.add_argument("--log_level", help="Log level to use", choices =
-                     debug_levels.keys())
+                     debug_levels.keys(), default = 'info')
 parser.add_argument("--output-dir", help="Directory to output state information to")
 parser.add_argument("--output-url", help="Base URL at which the output folder can be found")
 parser.add_argument("--oneshot", action='store_true', help="run state transition once")
 parser.add_argument("--update_delay", type=int, default=5, help="time in minutes between state updates")
+parser.add_argument("--game_type", choices = ["nomination", "traditional"], default = 'traditional')
 
 bot_username = creds.bot_username
 bot_password = creds.bot_password 
 
-authorized_users = {"rcxdude", "ploungemafia", "sixjester", "redpoemage"}
+authorized_users = creds.authorized_users
 
 Vote = collections.namedtuple("Vote", ["by", "target", "time"])
 
@@ -214,14 +215,15 @@ def get_bot_post(submission_url, tag = None):
     return submission, comment_to_update
 
 nominate_re = re.compile("""
-    (?P<strikethrough>~*)     #stricken through votes don't count
+    (?P<strikethrough>~*)                #stricken through votes don't count
       [^*~]*
-        (\*\*|__)             #must be bold
-            [^*]*?            #Can preface with whatever
-            (nominate|vote)   #vote or nominate is for clarity only, they have the same effect
-            \s*:?\s*          #could be a colon or not
-            (/u/)?            #might start with /u/
-            (?P<user>[^*\s]+) #username may consist of any characters except whitespace and *
+        (\*\*|__)                        #must be bold
+            [^*]*?                       #Can preface with whatever
+            (nominate|vote|lynch)?       #vote or nominate is for clarity only, they have the same effect
+            \s*:?\s*                     #could be a colon or not
+            (/u/)?                       #might start with /u/
+            (?P<user>[^*\s]+|no\s*lynch) #username may consist of any characters except whitespace and *
+                                         #'no lynch' is valid in traditional games, and contains a space
             \s*
         (\*\*|__)
       [^*~]*
@@ -283,20 +285,19 @@ def compare_dicts(old, new):
     return additions, removals
 
 def get_edited_time(comment):
-    offset = comment.created_utc - comment.created
-    return comment.edited + offset if comment.edited else comment.created_utc
+    return comment.edited if comment.edited else comment.created_utc
 
 known_invalid_votes = set()
 
-def get_votes(vote_post, target_player, old_votes, deadline):
+def get_votes(vote_post, target_player, old_votes, deadline, get_vote = get_vote_from_post):
     valid_names = {x.lower() for x in state['alive_players']}
     votes = {}
     for vote_comment in all_comments(vote_post.replies):
         if not vote_comment.author:
             continue
-        vote_result = get_vote_from_post(vote_comment.body)
+        vote_result = get_vote(vote_comment.body)
         if vote_result is None:
-            #l.warn("Did not get vote result from {}".format(vote_comment.body))
+            l.warn("Did not get vote result from {}".format(vote_comment.body))
             continue
 
         caster = vote_comment.author.name.lower()
@@ -322,6 +323,10 @@ def get_votes(vote_post, target_player, old_votes, deadline):
         #if multiple votes are present, count the latest one
         if (caster not in votes) or votes[caster]['timestamp'] > timestamp:
             votes[caster] = {"for" : target_player,
+                             #Confusing terminology: in nomination games,
+                             #'lynch' is a bool. In tradition games, it is a
+                             #string with the same meaning as 'for in nomination
+                             #games. 'for' is None in traditional games
                              "lynch" : vote_result,
                              "timestamp": timestamp}
 
@@ -408,7 +413,7 @@ def get_nominations(nomination_post):
                                          "for" : vote['for'],
                                          "time" : vote['timestamp']})
                 for voter, vote in removals.items():
-                    timestamp = votes[voter]['timestamp'] if voter in votes else time.time()
+                    timestamp = votes[voter]['timestamp'] if voter in votes else int(time.time())
                     vote_history.append({"action" : "unvote",
                                          "lynch" : vote['lynch'],
                                          "by" : voter,
@@ -471,11 +476,50 @@ def count_votes(vote_post, nominee):
                              "for" : vote['for'],
                              "time" : vote['timestamp']})
     for voter, vote in removals.items():
-        timestamp = votes[voter]['timestamp'] if voter in votes else time.time()
+        timestamp = votes[voter]['timestamp'] if voter in votes else int(time.time())
         vote_history.append({"action" : "unvote",
                              "lynch" : vote['lynch'],
                              "by" : voter,
                              "for" : vote['for'],
+                             "time" : timestamp})
+
+    votes_state['vote_history'] = vote_history
+    votes_state['current_votes'] = votes
+
+    state = new_state
+    l.debug("Done counting votes")
+
+def count_votes_traditional(vote_post):
+    global state
+    l.debug("Counting votes")
+    new_state = copy.deepcopy(state)
+
+    old_votes = state['votes'][vote_post.id]['current_votes']
+    votes_state = new_state['votes'][vote_post.id]
+
+    valid_names = {x.lower() for x in state['alive_players']}
+    valid_names.add('no lynch')
+
+    def get_vote(post_contents):
+        return get_nomination_from_post(post_contents, valid_names)
+
+    votes = get_votes(vote_post, None, old_votes, state['votes_ended_at'], get_vote = get_vote)
+
+    additions, removals = compare_dicts(old_votes, votes)
+    vote_history = votes_state.get('vote_history', [])
+    if not vote_history:
+        vote_history = []
+    for voter, vote in additions.items():
+        vote_history.append({"action" : "vote",
+                             "for" : vote['lynch'],
+                             "by" : voter,
+                             "time" : vote['timestamp']})
+
+    for voter, vote in removals.items():
+        timestamp = votes[voter]['timestamp'] if voter in votes else int(time.time())
+        vote_history.append({"action" : "unvote",
+                             "for" : vote['lynch'],
+                             "by" : voter,
                              "time" : timestamp})
 
     votes_state['vote_history'] = vote_history
@@ -542,7 +586,7 @@ def update_log(filename, post, template):
     with open(os.path.join(args.output_dir, filename), 'w') as log_fd:
         log_fd.write(contents)
 
-def update_state():
+def update_state_nomination():
     process_commands()
     if state['nominations_url']:
         nomination_submission, nomination_post = get_bot_post(state['nominations_url'], 'nominate')
@@ -565,6 +609,19 @@ def update_state():
                            votes_post, 'vote_state.template')
             update_post(votes_submission, votes_post, 'vote_post.template', nominee)
 
+def update_state_traditional():
+    process_commands()
+    state['name_case_cache']['no lynch'] = 'No Lynch'
+    if state['votes_url']:
+        vote_submission, vote_post = get_bot_post(state['votes_url'], 'vote')
+        if vote_post:
+            count_votes_traditional(vote_post)
+            update_log('{}_history.txt'.format(vote_post.id),
+                       vote_post, 'vote_history_traditional.template')
+            update_log('{}_votes.txt'.format(vote_post.id),
+                       vote_post, 'vote_state_traditional.template')
+        update_post(vote_submission, vote_post, 'vote_post_traditional.template', None)
+
 def load_state(state_filename):
     global state
     try:
@@ -582,9 +639,21 @@ def save_state(state_filename):
 if __name__ == "__main__":
     args = parser.parse_args()
 
+    update_state = {
+        "nomination" : update_state_nomination,
+        "traditional" : update_state_traditional,
+    }[args.game_type]
+
     l.setLevel(debug_levels[args.log_level])
     l.info("Starting up")
     r = praw.Reddit(user_agent = "VoteCountBot by rcxdude")
+
+    load_state(args.state)
+
+    if state['game_type'] and state['game_type'] != args.game_type:
+        raise RuntimeError("Wrong game type for state! state is {}, we're running {}".format(state['game_type'], args.game_type))
+
+    state['game_type'] = args.game_type
 
     while True:
         l.info("Attempting login")
@@ -594,8 +663,6 @@ if __name__ == "__main__":
         except Exception as e:
             l.error(traceback.format_exc())
             time.sleep(60 * args.update_delay)
-
-    load_state(args.state)
 
     l.info("Logged in")
 
