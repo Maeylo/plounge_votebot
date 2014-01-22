@@ -14,9 +14,9 @@ If you wish to retract your vote, you may \~\~~~strikethough~~\~\~ your old vote
 %votes = state['votes'][post.id]['current_votes']
 %import collections
 %vote_counts = collections.Counter([v['lynch'] for v in votes.values()])
-%for target, count in sorted(vote_counts.items(), key = lambda x: x[1]):
 | Player | Votes |
 |:-------|------:|
+%for target, count in sorted(vote_counts.items(), key = lambda x: x[1]):
 |{{fix_case(target)}}|{{count}}|
 %end
 
