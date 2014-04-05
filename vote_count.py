@@ -618,6 +618,17 @@ def update_state_traditional():
                        vote_post, 'vote_history_traditional.template')
             update_log('{}_votes.txt'.format(vote_post.id),
                        vote_post, 'vote_state_traditional.template')
+
+            votes = state['votes'][vote_post.id]['current_votes']
+            vote_counts = collections.Counter([v['lynch'] for v in votes.values()])
+            if len(vote_counts) and vote_counts.most_common(1)[0][1] > len(state['alive_players']) / 2 and not state['votes_ended_at']:
+                state['votes_ended_at'] = time.time()
+                v_url = state['votes_url']
+                state['votes_url'] = ""
+                for user in authorized_users:
+                    r.send_message(user, "Hammer", "The voting at {} has reached "
+                            "a majority. You might want to check the voting "
+                            "history and edit times if there were a few last-minute vote changes".format(v_url))
         update_post(vote_submission, vote_post, 'vote_post_traditional.template', None)
     update_log('players.txt', None, 'players.template')
 
