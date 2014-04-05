@@ -1,0 +1,8 @@
+ALIVE:
+%for player in state['alive_players']:
+{{fix_case(player)}}
+%end
+DEAD:
+%for player in state['dead_players']:
+{{fix_case(player)}}
+%end

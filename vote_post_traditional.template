@@ -16,7 +16,7 @@ If you wish to retract your vote, you may \~\~~~strikethough~~\~\~ your old vote
 %vote_counts = collections.Counter([v['lynch'] for v in votes.values()])
 | Player | Votes |
 |:-------|------:|
-%for target, count in sorted(vote_counts.items(), key = lambda x: x[1]):
+%for target, count in vote_counts.most_common():
 |{{fix_case(target)}}|{{count}}|
 %end
 
@@ -26,4 +26,4 @@ Voting ended at {{time(state['votes_ended_at'])}}
 
 \[[Vote History]({{output_url}}/{{post.id}}_history.txt)] \[[Current Votes]({{output_url}}/{{post.id}}_votes.txt)\]
 %end
-\[[Source code](https://github.com/rcxdude/plounge_votebot)\] ^([Bot made by rcxdude])
+\[[Players]({{output_url}}/players.txt)\] \[[Source code](https://github.com/rcxdude/plounge_votebot)\] ^([Bot made by rcxdude])

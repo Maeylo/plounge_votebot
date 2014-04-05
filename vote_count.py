@@ -608,6 +608,7 @@ def update_state_traditional():
             update_log('{}_votes.txt'.format(vote_post.id),
                        vote_post, 'vote_state_traditional.template')
         update_post(vote_submission, vote_post, 'vote_post_traditional.template', None)
+    update_log('players.txt', None, 'players.template')
 
 def load_state(state_filename):
     global state
