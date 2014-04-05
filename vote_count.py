@@ -59,7 +59,6 @@ def process_commands():
     have_nominations = False
     have_votes = False
     most_recent_id = None
-    death_actions = []
     alive_players = set(new_state["alive_players"])
     dead_players = set(new_state["dead_players"])
     alive_players.difference_update(dead_players)
@@ -94,33 +93,21 @@ def process_commands():
             player_set = set([x.lower() for x in pm.body.split() if len(x) > 3])
             if pm.subject == "alive":
                 l.info("Command: alive players")
-                def action():
-                    alive_players.update(player_set)
-                    dead_players.difference_update(player_set)
-                death_actions.append(action)
+                alive_players.update(player_set)
             if pm.subject == "dead":
                 l.info("Command dead players")
-                def action():
-                    alive_players.difference_update(player_set)
-                    dead_players.update(player_set)
-                death_actions.append(action)
+                alive_players.difference_update(player_set)
+                dead_players.update(player_set)
             if pm.subject == "gone":
                 l.info("Gone players")
-                def action():
-                    alive_players.difference_update(player_set)
-                    dead_players.difference_update(player_set)
-                death_actions.append(action)
+                alive_players.difference_update(player_set)
+                dead_players.difference_update(player_set)
         if command == "reset":
             l.warning("Got reset command")
             new_state = Tree()
             alive_players = set()
             dead_players = set()
             break
-
-    #life/death actions replay in reverse( since PMs are returned in reverse
-    #chronological order)
-    for action in reversed(death_actions):
-        action()
 
     new_state['alive_players'] = list(alive_players)
     new_state['dead_players'] = list(dead_players)
