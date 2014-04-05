@@ -202,42 +202,48 @@ def get_bot_post(submission_url, tag = None):
     return submission, comment_to_update
 
 nominate_re = re.compile("""
-    (?P<strikethrough>~*)                #stricken through votes don't count
+(
+    (?P<strikethrough>(~~)?)               #stricken through votes don't count
       [^*~]*
-        (\*\*|__)                        #must be bold
-            [^*]*?                       #Can preface with whatever
-            (nominate|vote|lynch)?       #vote or nominate is for clarity only, they have the same effect
-            \s*:?\s*                     #could be a colon or not
-            (/u/)?                       #might start with /u/
-            (?P<user>[^*\s]+|no\s*lynch) #username may consist of any characters except whitespace and *
-                                         #'no lynch' is valid in traditional games, and contains a space
-            \s*
+        (\*\*|__)                          #must be bold
+            [^*~]*?                        #Can preface with whatever
+            (nominate|vote|lynch)?         #vote or nominate is for clarity only, they have the same effect
+            \s*:?\s*                       #could be a colon or not
+            (/u/)?                         #might start with /u/
+            (?P<user>no\s*lynch|[^.*~\s]+) #username may consist of any characters except whitespace and *
+                                           #'no lynch' is valid in traditional games, and contains a space
+            [^*~]*?                        #Can end with whatever
         (\*\*|__)
       [^*~]*
-    (?P<strikethrough_1>~*)
+    (?P=strikethrough)
+) | (~~[^~]*~~)                            #must match other struck out blocks so that spurious matches don't occur
 """, re.VERBOSE)
 
 vote_re = re.compile("""
-    (?P<strikethrough>~*)
+(
+    (?P<strikethrough>(~~)?)      #stricken through votes don't count
       [^*~]*
-        (\*\*|__)             #must be bold
+        (\*\*|__)                 #must be bold
         \s*
-        (vote)?:?
+        (vote)?:?                 #can start with vote or not
         \s*
         (?P<vote>
-         yay|lynch|yes|
-         nay|pardon|no)
+         yay|lynch|yes|           #many yes or no options. Must be synced with
+         nay|pardon|no)           # get_vote_from_post()
         \s*
         (\*\*|__)
       [^*~]*
-    (?P<strikethrough_1>~*)
+    (?P=strikethrough)
+) | (~~[^~]*~~)                            #must match other struck out blocks so that spurious matches don't occur
 """, re.VERBOSE)
 
 def get_nomination_from_post(post_contents, valid_names):
     matches = nominate_re.finditer(post_contents.lower())
     valid_votes = []
     for match in matches:
-        if match.group('strikethrough') and match.group('strikethrough_1'):
+        if match.group('strikethrough'):
+            continue
+        if not match.group('user'):
             continue
         username = match.group('user').strip().lower()
         if username in valid_names:
@@ -249,7 +255,9 @@ def get_vote_from_post(post_contents):
     matches = vote_re.finditer(post_contents.lower())
     valid_votes = []
     for match in matches:
-        if match.group('strikethrough') and match.group('strikethrough_1'):
+        if match.group('strikethrough'):
+            continue
+        if not match.group('vote'):
             continue
         vote = match.group('vote').strip().lower()
         if vote in ('yay', 'lynch', 'yes'):
@@ -284,7 +292,9 @@ def get_votes(vote_post, target_player, old_votes, deadline, get_vote = get_vote
             continue
         vote_result = get_vote(vote_comment.body)
         if vote_result is None:
-            l.warn("Did not get vote result from {}".format(vote_comment.body))
+            if vote_comment.id not in known_invalid_votes:
+                l.warn("Did not get vote result from {}".format(vote_comment.body.encode('ascii', errors='ignore')))
+                known_invalid_votes.add(vote_comment.id)
             continue
 
         caster = vote_comment.author.name.lower()
@@ -488,7 +498,8 @@ def count_votes_traditional(vote_post):
     valid_names.add('no lynch')
 
     def get_vote(post_contents):
-        return get_nomination_from_post(post_contents, valid_names)
+        res = get_nomination_from_post(post_contents, valid_names)
+        return res
 
     votes = get_votes(vote_post, None, old_votes, state['votes_ended_at'], get_vote = get_vote)
 
