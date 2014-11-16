@@ -61,6 +61,8 @@ def process_commands():
     most_recent_id = None
     alive_players = set(new_state["alive_players"])
     dead_players = set(new_state["dead_players"])
+    voteless_players = set(new_state["voteless_players"])
+    voteless_players.difference_update(dead_players)
     alive_players.difference_update(dead_players)
     for pm in pms:
         if pm.id == state['most_recent_pm_id']:
@@ -88,8 +90,9 @@ def process_commands():
             new_state['votes_url'] = pm.body.split()[0]
             new_state['nominated_players'] = pm.body.split()[1:]
             new_state['votes_ended_at'] = None
+            new_state['vote_threshold'] = None
             have_votes = True
-        if command in ('alive', 'dead', 'gone'):
+        if command in ('alive', 'dead', 'gone', 'voteless', 'voteful'):
             player_set = set([x.lower() for x in pm.body.split() if len(x) > 3])
             if pm.subject == "alive":
                 l.info("Command: alive players")
@@ -102,15 +105,30 @@ def process_commands():
                 l.info("Gone players")
                 alive_players.difference_update(player_set)
                 dead_players.difference_update(player_set)
+                voteless_players.difference_update(player_set)
+            if pm.subject == "voteless":
+                l.info("Voteless players")
+                voteless_players.update(player_set)
+            if pm.subject == "voteful":
+                l.info("Voteful players")
+                voteless_players.difference_update(player_set)
         if command == "reset":
             l.warning("Got reset command")
             new_state = Tree()
             alive_players = set()
             dead_players = set()
             break
+        if command == "vote threshold":
+            l.info("Command: new vote threshold")
+            try:
+                threshold = int(pm.body)
+            except ValueError:
+                l.warn("Invalid number given for vote threshold: {}".format(pm.body))
+            new_state['vote_threshold'] = threshold
 
     new_state['alive_players'] = list(alive_players)
     new_state['dead_players'] = list(dead_players)
+    new_state['voteless_players'] = list(voteless_players)
     if most_recent_id:
         new_state['most_recent_pm_id'] = most_recent_id
     l.debug("Done processing commands, updating state")
@@ -206,6 +224,8 @@ nominate_re = re.compile("""
     (?P<strikethrough>(~~)?)               #stricken through votes don't count
       [^*~]*
         (\*\*|__)                          #must be bold
+            [^*~]*?
+            (?P<strikethrough_inner>(~~)?)
             [^*~]*?                        #Can preface with whatever
             (nominate|vote|lynch)?         #vote or nominate is for clarity only, they have the same effect
             \s*:?\s*                       #could be a colon or not
@@ -213,6 +233,8 @@ nominate_re = re.compile("""
             (?P<user>no\s*lynch|[^.*~\s]+) #username may consist of any characters except whitespace and *
                                            #'no lynch' is valid in traditional games, and contains a space
             [^*~]*?                        #Can end with whatever
+            (?P=strikethrough_inner)
+            [^*~]*?
         (\*\*|__)
       [^*~]*
     (?P=strikethrough)
@@ -225,11 +247,15 @@ vote_re = re.compile("""
       [^*~]*
         (\*\*|__)                 #must be bold
         \s*
+        (?P<strikethrough_inner>(~~)?)
+        \s*
         (vote)?:?                 #can start with vote or not
         \s*
         (?P<vote>
          yay|lynch|yes|           #many yes or no options. Must be synced with
          nay|pardon|no)           # get_vote_from_post()
+        \s*
+        (?P=strikethrough_inner)
         \s*
         (\*\*|__)
       [^*~]*
@@ -255,7 +281,7 @@ def get_vote_from_post(post_contents):
     matches = vote_re.finditer(post_contents.lower())
     valid_votes = []
     for match in matches:
-        if match.group('strikethrough'):
+        if match.group('strikethrough') or match.group('strikethrough_inner'):
             continue
         if not match.group('vote'):
             continue
@@ -286,6 +312,8 @@ known_invalid_votes = set()
 
 def get_votes(vote_post, target_player, old_votes, deadline, get_vote = get_vote_from_post):
     valid_names = {x.lower() for x in state['alive_players']}
+    #can_vote = valid_names.difference({x.lower() for x in state['voteless_players']})
+    can_vote = valid_names
     votes = {}
     for vote_comment in all_comments(vote_post.replies):
         if not vote_comment.author:
@@ -298,9 +326,11 @@ def get_votes(vote_post, target_player, old_votes, deadline, get_vote = get_vote
             continue
 
         caster = vote_comment.author.name.lower()
-        if caster not in valid_names:
+        if caster not in can_vote:
             if vote_comment.id not in known_invalid_votes:
-                l.info("{} cannot vote ({} can)!".format(caster, valid_names))
+                #voteless is kinda-secret
+                if caster not in valid_names:
+                    l.info("{} cannot vote ({} can)!".format(caster, valid_names))
                 known_invalid_votes.add(vote_comment.id)
             continue
 
@@ -346,6 +376,7 @@ def get_nominations(nomination_post):
     l.debug("Counting nominations")
     new_state = copy.deepcopy(state)
     valid_names = {x.lower() for x in state['alive_players']}
+    #TODO: voteless does not affect nominations currently.
     nomination_state = new_state['nominations'][nomination_post.id]
     nomination_state['deadline'] = new_state['nominations_ended_at']
     nominations = nomination_state['current_nominations']
@@ -621,14 +652,20 @@ def update_state_traditional():
 
             votes = state['votes'][vote_post.id]['current_votes']
             vote_counts = collections.Counter([v['lynch'] for v in votes.values()])
-            if len(vote_counts) and vote_counts.most_common(1)[0][1] > len(state['alive_players']) / 2 and not state['votes_ended_at']:
+            real_vote_counts = collections.Counter([v['lynch'] for caster, v in votes.items()
+                               if caster not in state['voteless_players']])
+            vote_threshold = state['vote_threshold']
+            if not isinstance(vote_threshold, int):
+                vote_threshold = (len(state['alive_players']) - len(state['voteless_players']))/ 2 + 1
+            if len(vote_counts) and real_vote_counts.most_common(1)[0][1] >= vote_threshold and not state['votes_ended_at']:
                 state['votes_ended_at'] = time.time()
                 v_url = state['votes_url']
                 state['votes_url'] = ""
+                lynched_player = real_vote_counts.most_common(1)[0][0]
                 for user in authorized_users:
                     r.send_message(user, "Hammer", "The voting at {} has reached "
-                            "a majority. You might want to check the voting "
-                            "history and edit times if there were a few last-minute vote changes".format(v_url))
+                            "a majority for {} . You might want to check the voting "
+                            "history and edit times if there were a few last-minute vote changes".format(v_url, lynched_player))
         update_post(vote_submission, vote_post, 'vote_post_traditional.template', None)
     update_log('players.txt', None, 'players.template')
 

@@ -19,6 +19,13 @@ If you wish to retract your vote, you may \~\~~~strikethough~~\~\~ your old vote
 %for target, count in vote_counts.most_common():
 |{{fix_case(target)}}|{{count}}|
 %end
+%
+%vote_threshold = state['vote_threshold']
+%if not isinstance(vote_threshold, int):
+%    vote_threshold = len(state['alive_players']) / 2 + 1
+%end
+
+%#{{vote_threshold}} votes are needed for a lynch.
 
 %if state['votes_ended_at']:
 Voting ended at {{time(state['votes_ended_at'])}}
