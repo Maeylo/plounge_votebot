@@ -10,6 +10,7 @@ import creds
 import os.path
 import logging
 import argparse
+import requests
 import datetime
 import traceback
 import prettylog
@@ -37,6 +38,8 @@ parser.add_argument("--oneshot", action='store_true', help="run state transition
 parser.add_argument("--update_delay", type=int, default=5, help="time in minutes between state updates")
 parser.add_argument("--game_type", choices = ["nomination", "traditional"], default = 'traditional')
 parser.add_argument("--dry-run", action='store_true', help="Don't actually post anything")
+parser.add_argument("--hammers", action='store_true', default = False, help="Use Hammer votes (voting ends as soon as a majority is reached")
+parser.add_argument("--secret-voteless", action='store_true', default = False, help = "voteless is secret (does not affect public vote counts)")
 
 Vote = collections.namedtuple("Vote", ["by", "target", "time"])
 Nomination = collections.namedtuple('Nomination', ['player', 'yays', 'nays', 'up_for_trial', 'vote_post_id', 'timestamp'])
@@ -228,13 +231,21 @@ class VoteBot(object):
         voteless_players = set(new_state["voteless_players"])
         voteless_players.difference_update(dead_players)
         alive_players.difference_update(dead_players)
+        pms_reversed = []
         for pm in pms:
+            command = pm.subject.lower().strip()
             if pm.id == self.state['most_recent_pm_id']:
                 break
             if not most_recent_id:
                 most_recent_id = pm.id
             if pm.author.name.lower() not in self.authorized_users:
                 continue
+            pms_reversed.append(pm)
+            if command == "reset":
+                break
+
+        pms_reversed.reverse()
+        for pm in pms_reversed:
             command = pm.subject.lower().strip()
             l.debug('command subject: {}'.format(command))
             if command == "end nominations" and not have_nominations:
@@ -282,7 +293,7 @@ class VoteBot(object):
                 new_state = Tree()
                 alive_players = set()
                 dead_players = set()
-                break
+                voteless_players = set()
             if command == "vote threshold":
                 l.info("Command: new vote threshold")
                 try:
@@ -404,7 +415,7 @@ class VoteBot(object):
         l.debug("Finding proper name for {}".format(username))
         try:
             user = praw.objects.Redditor(self.reddit, username)
-        except HTTPError:
+        except requests.HTTPError:
             l.warn("Username {} doesn't appear to exist!".format(username))
             self.state['name_case_cache'][username] = username
             return username
@@ -428,7 +439,8 @@ class VoteBot(object):
                                                 time = timestamp_to_date,
                                                 post = post,
                                                 output_url = self.args.output_url,
-                                                fix_case = self.fix_case)
+                                                fix_case = self.fix_case,
+                                                args = args)
 
             if not post:
                 l.info("Making new post")
@@ -452,7 +464,8 @@ class VoteBot(object):
             template = simpletemplate.SimpleTemplate(template_fd.read())
             contents = template.render(state = self.state, post = post,
                                        time = timestamp_to_date,
-                                       fix_case = self.fix_case)
+                                       fix_case = self.fix_case,
+                                       args = args)
         with open(os.path.join(self.args.output_dir, filename), 'w') as log_fd:
             log_fd.write(contents)
 
@@ -646,7 +659,7 @@ class TraditionalBot(VoteBot):
         if self.state['votes_url']:
             vote_submission, vote_post = self.get_bot_post(self.state['votes_url'], 'vote')
             if vote_post:
-                count_votes_traditional(vote_post)
+                self.count_votes(vote_post)
                 self.update_log('{}_history.txt'.format(vote_post.id),
                                 vote_post, 'vote_history_traditional.template')
                 self.update_log('{}_votes.txt'.format(vote_post.id),
@@ -656,10 +669,12 @@ class TraditionalBot(VoteBot):
                 vote_counts = collections.Counter([v['lynch'] for v in votes.values()])
                 real_vote_counts = collections.Counter([v['lynch'] for caster, v in votes.items()
                                    if caster not in self.state['voteless_players']])
+                if not args.secret_voteless:
+                    vote_counts = real_vote_counts
                 vote_threshold = self.state['vote_threshold']
                 if not isinstance(vote_threshold, int):
                     vote_threshold = (len(self.state['alive_players']) - len(self.state['voteless_players']))/ 2 + 1
-                if len(vote_counts) and real_vote_counts.most_common(1)[0][1] >= vote_threshold and not self.state['votes_ended_at']:
+                if len(vote_counts) and real_vote_counts.most_common(1)[0][1] >= vote_threshold and not self.state['votes_ended_at'] and args.hammers:
                     self.state['votes_ended_at'] = time.time()
                     v_url = state['votes_url']
                     self.state['votes_url'] = ""

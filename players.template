@@ -6,3 +6,9 @@ DEAD:
 %for player in state['dead_players']:
 {{fix_case(player)}}
 %end
+%if len(state['voteless_players']) != 0 and not args.secret_voteless:
+VOTELESS:
+%for player in state['voteless_players']:
+{{fix_case(player)}}
+%end
+%end

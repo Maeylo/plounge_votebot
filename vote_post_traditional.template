@@ -6,7 +6,11 @@ I am your friendly neighbourhood lynch vote bot!
 Please respond to this comment with \*\***vote: player**\*\* in order to cast your vote for their lynch!
 You can also \*\***vote: no lynch**\*\* if you would prefer there to be no lynch today.
 
+%if args.hammers:
 Voting ends when a majority is reached. You cannot change your vote after this occurs.
+%else:
+Voting ends at the end of the day (when a mod triggers it). You cannot change your vote after this occurs.
+%end
 
 If you wish to retract your vote, you may \~\~~~strikethough~~\~\~ your old vote.
 
