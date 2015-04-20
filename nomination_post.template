@@ -1,5 +1,5 @@
 [](###nominate###)
-I am your friendly neighbourhood lynch vote bot!
+I am your friendly neighbourhood lynch vote bot for {{args.name}}!
 
 Please reply to this post with \*\*Nominate: player\*\* to nominate a player to go on trial (e.g. **Nominate: PloungeMafiaVoteBot**). 
 You can include any other information in your post, such as why you are nominating them.

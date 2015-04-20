@@ -1,5 +1,6 @@
 #!/usr/bin/env python2.7
 
+import os
 import re
 import praw
 import json
@@ -7,6 +8,7 @@ import copy
 import time
 import pytz
 import creds
+import config
 import os.path
 import logging
 import argparse
@@ -29,17 +31,11 @@ debug_levels = {
 }
 
 parser = argparse.ArgumentParser(description="Plounge mafia vote counting bot")
-parser.add_argument("--state", help="State file to use")
 parser.add_argument("--log_level", help="Log level to use", choices =
                      debug_levels.keys(), default = 'info')
-parser.add_argument("--output-dir", help="Directory to output state information to")
-parser.add_argument("--output-url", help="Base URL at which the output folder can be found")
 parser.add_argument("--oneshot", action='store_true', help="run state transition once")
 parser.add_argument("--update_delay", type=int, default=5, help="time in minutes between state updates")
-parser.add_argument("--game_type", choices = ["nomination", "traditional"], default = 'traditional')
 parser.add_argument("--dry-run", action='store_true', help="Don't actually post anything")
-parser.add_argument("--hammers", action='store_true', default = False, help="Use Hammer votes (voting ends as soon as a majority is reached")
-parser.add_argument("--secret-voteless", action='store_true', default = False, help = "voteless is secret (does not affect public vote counts)")
 
 Vote = collections.namedtuple("Vote", ["by", "target", "time"])
 Nomination = collections.namedtuple('Nomination', ['player', 'yays', 'nays', 'up_for_trial', 'vote_post_id', 'timestamp'])
@@ -212,12 +208,16 @@ class VoteBot(object):
     def __init__(self, reddit, credentials, args):
         self.bot_username = credentials.bot_username
         self.bot_password = credentials.bot_password
-        self.authorized_users = credentials.authorized_users
+        self.authorized_users = args.authorized_users
         self.known_invalid_votes = set()
         self.state = Tree()
         self.reddit = reddit
         self.args = args
         self.max_trials = 5
+
+    def setup_dir(self):
+        if not os.path.exists(self.args.output_dir):
+            os.makedirs(self.args.output_dir)
 
     def process_commands(self):
         l.debug("Processing commands")
@@ -233,7 +233,13 @@ class VoteBot(object):
         alive_players.difference_update(dead_players)
         pms_reversed = []
         for pm in pms:
-            command = pm.subject.lower().strip()
+            if ":" not in pm.subject:
+                continue
+            game_name, command = pm.subject.split(':')
+            game_name = game_name.lower().strip()
+            command = command.lower().strip()
+            if not (game_name == self.args.name.lower() or game_name == "*"):
+                continue
             if pm.id == self.state['most_recent_pm_id']:
                 break
             if not most_recent_id:
@@ -246,8 +252,10 @@ class VoteBot(object):
 
         pms_reversed.reverse()
         for pm in pms_reversed:
-            command = pm.subject.lower().strip()
-            l.debug('command subject: {}'.format(command))
+            game_name, command = pm.subject.split(':')
+            game_name = game_name.lower().strip()
+            command = command.lower().strip()
+            l.debug('command: {}'.format(command))
             if command == "end nominations" and not have_nominations:
                 l.info("Command: end nominations")
                 new_state['nominations_ended_at'] = pm.created_utc
@@ -270,24 +278,31 @@ class VoteBot(object):
                 have_votes = True
             if command in ('alive', 'dead', 'gone', 'voteless', 'voteful'):
                 player_set = set([x.lower() for x in pm.body.split() if len(x) > 3])
-                if pm.subject == "alive":
+                if command == "alive":
                     l.info("Command: alive players")
                     alive_players.update(player_set)
-                if pm.subject == "dead":
-                    l.info("Command dead players")
+                elif command == "dead":
+                    l.info("Command: dead players")
                     alive_players.difference_update(player_set)
                     dead_players.update(player_set)
-                if pm.subject == "gone":
-                    l.info("Gone players")
+                elif command == "gone":
+                    l.info("Command: gone players")
                     alive_players.difference_update(player_set)
                     dead_players.difference_update(player_set)
                     voteless_players.difference_update(player_set)
-                if pm.subject == "voteless":
+                elif command == "voteless":
                     l.info("Voteless players")
                     voteless_players.update(player_set)
-                if pm.subject == "voteful":
+                elif command == "voteful":
                     l.info("Voteful players")
                     voteless_players.difference_update(player_set)
+                else:
+                    l.warning("Unknown command {}".format(command))
+            if command == "max nominations":
+                try:
+                    self.max_trials = int(pm.body.strip())
+                except ValueError:
+                    l.warning("Got invalid value for max nominations: {}".format(pm.body.strip()))
             if command == "reset":
                 l.warning("Got reset command")
                 new_state = Tree()
@@ -387,7 +402,7 @@ class VoteBot(object):
             return yays, nays
         deadline = post_state['deadline'] if post_state['deadline'] else float('Inf')
         sorted_nominations = post_state['current_nominations'].items()
-        sorted_nominations.sort(key = lambda x: (x[0] not in state['dead_players'],
+        sorted_nominations.sort(key = lambda x: (x[0] not in self.state['dead_players'],
                                                  votes(x[0])[1] - votes(x[0])[0],
                                                  x[1]['timestamp']))
         n_trials = 0
@@ -440,17 +455,17 @@ class VoteBot(object):
                                                 post = post,
                                                 output_url = self.args.output_url,
                                                 fix_case = self.fix_case,
-                                                args = args)
+                                                args = self.args)
 
             if not post:
                 l.info("Making new post")
-                if not self.args.dry_run:
+                if not args.dry_run:
                     submission.add_comment(post_contents)
                 l.info(post_contents)
             else:
                 if post.body.strip() != post_contents.strip():
                     l.info("Updating post")
-                    if not self.args.dry_run:
+                    if not args.dry_run:
                         post.edit(post_contents)
                     l.info(post_contents)
 
@@ -458,14 +473,14 @@ class VoteBot(object):
 
     def update_log(self, filename, post, template):
         l.debug("Updating logfile {}".format(filename))
-        if self.args.dry_run:
+        if args.dry_run:
             return
         with open(template) as template_fd:
             template = simpletemplate.SimpleTemplate(template_fd.read())
             contents = template.render(state = self.state, post = post,
                                        time = timestamp_to_date,
                                        fix_case = self.fix_case,
-                                       args = args)
+                                       args = self.args)
         with open(os.path.join(self.args.output_dir, filename), 'w') as log_fd:
             log_fd.write(contents)
 
@@ -477,9 +492,9 @@ class VoteBot(object):
             pass
 
         if self.state['game_type'] and self.state['game_type'] != self.args.game_type:
-            raise RuntimeError("Wrong game type for state! state is {}, we're running {}".format(state['game_type'], args.game_type))
+            raise RuntimeError("Wrong game type for state! state is {}, we're running {}".format(state['game_type'], self.args.game_type))
 
-        self.state['game_type'] = args.game_type
+        self.state['game_type'] = self.args.game_type
 
 
     def save_state(self, state_filename):
@@ -487,18 +502,6 @@ class VoteBot(object):
             return
         with open(state_filename, 'w') as state_fd:
             json.dump(self.state, state_fd, indent=2)
-
-    def login(self):
-        while True:
-            l.info("Attempting login")
-            try:
-                self.reddit.login(self.bot_username, self.bot_password)
-                break
-            except Exception as e:
-                l.error(traceback.format_exc())
-                time.sleep(60 * args.update_delay)
-
-        l.info("Logged in")
 
 class NominationBot(VoteBot):
     def acknowledge_nomination(self, comment, target):
@@ -511,7 +514,7 @@ class NominationBot(VoteBot):
             template = simpletemplate.SimpleTemplate(post_template_fd.read())
             post_contents = template.render(state = self.state, target = target, fix_case = self.fix_case)
         l.info("Acknowledging nomination for {}".format(target))
-        if self.args.dry_run:
+        if args.dry_run:
             return None
         else:
             return comment.reply(post_contents)
@@ -669,7 +672,7 @@ class TraditionalBot(VoteBot):
                 vote_counts = collections.Counter([v['lynch'] for v in votes.values()])
                 real_vote_counts = collections.Counter([v['lynch'] for caster, v in votes.items()
                                    if caster not in self.state['voteless_players']])
-                if not args.secret_voteless:
+                if not self.args.secret_voteless:
                     vote_counts = real_vote_counts
                 vote_threshold = self.state['vote_threshold']
                 if not isinstance(vote_threshold, int):
@@ -680,7 +683,7 @@ class TraditionalBot(VoteBot):
                     self.state['votes_url'] = ""
                     lynched_player = real_vote_counts.most_common(1)[0][0]
                     for user in self.authorized_users:
-                        if not self.args.dry_run:
+                        if not args.dry_run:
                             self.reddit.send_message(user, "Hammer",
                             "The voting at {} has reached "
                             "a majority for {} . You might want to check the voting "
@@ -732,26 +735,45 @@ class TraditionalBot(VoteBot):
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    BotClass = {
-        "nomination" : NominationBot,
-        "traditional" : TraditionalBot,
-    }[args.game_type]
-
     l.setLevel(debug_levels[args.log_level])
-    l.debug('test')
     l.info("Starting up")
     r = praw.Reddit(user_agent = "VoteCountBot by rcxdude")
 
-    bot = BotClass(r, creds, args)
-    bot.load_state(args.state)
-    bot.login()
+    bots = []
+
+
+    for game in config.games:
+        if game.name.lower() not in [x.lower() for x in config.enabled_games]:
+            continue
+
+        BotClass = {
+            "nomination" : NominationBot,
+            "traditional" : TraditionalBot,
+        }[game.game_type]
+
+        bot = BotClass(r, creds, game)
+        bot.load_state(bot.args.state_file)
+        bot.setup_dir()
+        bots.append(bot)
 
     while True:
+        l.info("Attempting login")
         try:
-            bot.update_state()
-            bot.save_state(args.state)
+            r.login(creds.bot_username, creds.bot_password)
+            break
         except Exception as e:
             l.error(traceback.format_exc())
+            time.sleep(60 * args.update_delay)
+
+    l.info("Logged in")
+
+    while True:
+        for bot in bots:
+            try:
+                bot.update_state()
+                bot.save_state(bot.args.state_file)
+            except Exception as e:
+                l.error(traceback.format_exc())
         if args.oneshot:
             break
         time.sleep(60 * args.update_delay)
