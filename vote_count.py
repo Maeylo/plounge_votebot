@@ -20,6 +20,8 @@ import collections
 import praw.objects
 import simpletemplate
 
+from HTMLParser import HTMLParser
+
 l = prettylog.ColoredLogger(__name__)
 
 debug_levels = {
@@ -112,77 +114,65 @@ def all_comments(replies):
                 yield additional_comment
 
 nominate_re = re.compile("""
-(
-    (?P<strikethrough>(~~)?)               #stricken through votes don't count
-      [^*~]*
-        (\*\*|__)                          #must be bold
-            [^*~]*?
-            (?P<strikethrough_inner>(~~)?)
-                [^*~]*?                        #Can preface with whatever
-                (nominate|vote|lynch)?         #vote or nominate is for clarity only, they have the same effect
-                \s*:?\s*                       #could be a colon or not
-                (/u/)?                         #might start with /u/
-                (?P<user>no\s*lynch|[^.*~\s]+) #username may consist of any characters except whitespace and *
+(nominate|vote|lynch)?         #vote or nominate is for clarity only, they have the same effect
+\s*:?\s*                       #could be a colon or not
+(/u/)?                         #might start with /u/
+(?P<user>no\s*lynch|[^.*~\s]+) #username may consist of any characters except whitespace and *
                                                #'no lynch' is valid in traditional games, and contains a space
-                [^*~]*?                        #Can end with whatever
-            (?P=strikethrough_inner)
-            [^*~]*?
-        (\*\*|__)
-      [^*~]*
-    (?P=strikethrough)
-) | (~~[^~]*~~)                            #must match other struck out blocks so that spurious matches don't occur
 """, re.VERBOSE)
 
 vote_re = re.compile("""
-(
-    (?P<strikethrough>(~~)?)      #stricken through votes don't count
-      [^*~]*
-        (\*\*|__)                 #must be bold
-            \s*
-            (?P<strikethrough_inner>(~~)?)
-                \s*
-                (vote)?:?                 #can start with vote or not
-                \s*
-                (?P<vote>
-                 yay|lynch|yes|           #many yes or no options. Must be synced with
-                 nay|pardon|no)           # get_vote_from_post()
-                \s*
-            (?P=strikethrough_inner)
-            \s*
-        (\*\*|__)
-      [^*~]*
-    (?P=strikethrough)
-) | (~~[^~]*~~)                            #must match other struck out blocks so that spurious matches don't occur
+(vote)?:?                 #can start with vote or not
+\s*
+(?P<vote>
+ yay|lynch|yes|           #many yes or no options. Must be synced with
+ nay|pardon|no)           # get_vote_from_post()
 """, re.VERBOSE)
 
+class RedditHTMLParser(HTMLParser):
+    def __init__(self):
+        HTMLParser.__init__(self)
+        self.nest_count = collections.defaultdict(int)
+        self.possible_votes = []
+
+    def handle_starttag(self, tag, attrs):
+        self.nest_count[tag] += 1
+
+    def handle_endtag(self, tag):
+        self.nest_count[tag] -= 1
+
+    def handle_data(self, data):
+        if self.nest_count["strong"] > 0 and self.nest_count["del"] == 0:
+            self.possible_votes.append(data)
+
+def get_possible_votes(post_contents):
+    parser = RedditHTMLParser()
+    parser.feed(parser.unescape(post_contents))
+    return parser.possible_votes
 
 def get_nomination_from_post(post_contents, valid_names):
-    matches = nominate_re.finditer(post_contents.lower())
     valid_votes = []
-    for match in matches:
-        if match.group('strikethrough'):
-            continue
-        if not match.group('user'):
-            continue
-        username = match.group('user').strip().lower()
-        if username in valid_names:
-            valid_votes.append(username)
+    for possible_vote in get_possible_votes(post_contents):
+        for match in nominate_re.finditer(possible_vote.lower().strip()):
+            if not match.group('user'):
+                continue
+            username = match.group('user').strip().lower()
+            if username in valid_names:
+                valid_votes.append(username)
     if valid_votes:
         return valid_votes[-1]
 
 def get_vote_from_post(post_contents):
-    matches = vote_re.finditer(post_contents.lower())
     valid_votes = []
-    for match in matches:
-        if match.group('strikethrough') or match.group('strikethrough_inner'):
-            continue
-        if not match.group('vote'):
-            continue
-        vote = match.group('vote').strip().lower()
-        if vote in ('yay', 'lynch', 'yes'):
-            valid_votes.append(True)
-        elif vote in ('nay', 'pardon', 'no'):
-            valid_votes.append(False)
+    for possible_vote in get_possible_votes(post_contents):
+        for match in vote_re.finditer(possible_vote.lower().strip()):
+            if not match.group('vote'):
+                continue
+            vote = match.group('vote').strip().lower()
+            if vote in ('yay', 'lynch', 'yes'):
+                valid_votes.append(True)
+            elif vote in ('nay', 'pardon', 'no'):
+                valid_votes.append(False)
     if valid_votes:
         return valid_votes[-1]
 
@@ -220,9 +210,9 @@ class VoteBot(object):
             os.makedirs(self.args.output_dir)
 
     def process_commands(self):
-        l.debug("Processing commands")
+        l.debug("Processing commands for {}".format(self.args.name))
         new_state = copy.deepcopy(self.state)
-        pms = self.reddit.get_inbox()
+        pms = self.reddit.get_inbox(limit = None)
         have_nominations = False
         have_votes = False
         most_recent_id = None
@@ -352,10 +342,10 @@ class VoteBot(object):
         for vote_comment in all_comments(vote_post.replies):
             if not vote_comment.author:
                 continue
-            vote_result = get_vote(vote_comment.body)
+            vote_result = get_vote(vote_comment.body_html)
             if vote_result is None:
                 if vote_comment.id not in self.known_invalid_votes:
-                    l.warn("Did not get vote result from {}".format(vote_comment.body.encode('ascii', errors='ignore')))
+                    l.warn("Did not get vote result from {}".format(vote_comment.body_html.encode('ascii', errors='ignore')))
                     self.known_invalid_votes.add(vote_comment.id)
                 continue
 
@@ -528,7 +518,7 @@ class NominationBot(VoteBot):
         nomination_state['deadline'] = new_state['nominations_ended_at']
         nominations = nomination_state['current_nominations']
         for nomination_comment in all_comments(nomination_post.replies):
-            nominee = get_nomination_from_post(nomination_comment.body, valid_names)
+            nominee = get_nomination_from_post(nomination_comment.body_html, valid_names)
             if not nominee:
                 continue
             if not nomination_comment.author:
