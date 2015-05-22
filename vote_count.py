@@ -125,7 +125,7 @@ vote_re = re.compile("""
 (vote)?:?                 #can start with vote or not
 \s*
 (?P<vote>
- yay|lynch|yes|           #many yes or no options. Must be synced with
+ yay|lynch|yes|second|    #many yes or no options. Must be synced with
  nay|pardon|no)           # get_vote_from_post()
 """, re.VERBOSE)
 
@@ -169,7 +169,7 @@ def get_vote_from_post(post_contents):
             if not match.group('vote'):
                 continue
             vote = match.group('vote').strip().lower()
-            if vote in ('yay', 'lynch', 'yes'):
+            if vote in ('yay', 'lynch', 'yes', 'second'):
                 valid_votes.append(True)
             elif vote in ('nay', 'pardon', 'no'):
                 valid_votes.append(False)
@@ -258,6 +258,7 @@ class VoteBot(object):
                 l.info("Command: new nominations thread")
                 new_state['nominations_url'] = pm.body
                 new_state['nominations_ended_at'] = None
+                new_state['counting_nominations'] = True
                 have_nominations = True
             if command == "votes" and not have_votes:
                 l.info("Command: new votes thread")
@@ -265,6 +266,7 @@ class VoteBot(object):
                 new_state['nominated_players'] = pm.body.split()[1:]
                 new_state['votes_ended_at'] = None
                 new_state['vote_threshold'] = None
+                new_state['counting_votes'] = True
                 have_votes = True
             if command in ('alive', 'dead', 'gone', 'voteless', 'voteful'):
                 player_set = set([x.lower() for x in pm.body.split() if len(x) > 3])
@@ -425,7 +427,10 @@ class VoteBot(object):
             self.state['name_case_cache'][username] = username
             return username
         #there should be a better way...
-        comment = user.get_comments().next()
+        try:
+            comment = user.get_comments().next()
+        except:
+            comment = None
         if not comment:
             l.warn("No comments by {}? can't work out their proper name!".format(username))
             self.state['name_case_cache'][username] = username
@@ -587,12 +592,14 @@ class NominationBot(VoteBot):
                     nomination_state['vote_history'] = vote_history
                     break
 
+        if new_state['nominations_ended_at']:
+            new_state['counting_nominations'] = False
         self.state = new_state
         l.debug("Done counting nominations")
 
     def update_state(self):
         self.process_commands()
-        if self.state['nominations_url']:
+        if self.state['nominations_url'] and self.state['counting_nominations']:
             nomination_submission, nomination_post = self.get_bot_post(self.state['nominations_url'], 'nominate')
             if nomination_post:
                 self.get_nominations(nomination_post)
@@ -602,18 +609,21 @@ class NominationBot(VoteBot):
                                 nomination_post, 'nomination_state.template')
             self.update_post(nomination_submission, nomination_post, 'nomination_post.template',
                              target=nomination_post.id if nomination_post else None)
-        if self.state['votes_url']:
+
+        if self.state['votes_url'] and self.state['counting_votes']:
             for nominee in self.state['nominated_players']:
                 votes_submission, votes_post = self.get_bot_post(self.state['votes_url'], 'vote ' + nominee)
                 if votes_post:
-                    count_votes(votes_post, nominee)
+                    self.count_votes(votes_post, nominee)
                     self.update_log('{}_history.txt'.format(votes_post.id),
                                     votes_post, 'vote_history.template')
                     self.update_log('{}_votes.txt'.format(votes_post.id),
                                     votes_post, 'vote_state.template')
                 self.update_post(votes_submission, votes_post, 'vote_post.template', nominee)
+            if self.state['votes_ended_at']:
+                self.state['counting_votes'] = False
 
-    def count_votes(vote_post, nominee):
+    def count_votes(self, vote_post, nominee):
         l.debug("Counting votes")
         new_state = copy.deepcopy(self.state)
         old_votes = self.state['votes'][vote_post.id]['current_votes']
