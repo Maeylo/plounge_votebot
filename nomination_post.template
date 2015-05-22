@@ -11,7 +11,7 @@ You can include any other information in your post, such as why you are nominati
 %for nomination in sort_nominations(post_state):
 %b = "**" if nomination.up_for_trial else ""
 %b = "~~" if nomination.player in state['dead_players'] else b
-| [{{b}}{{fix_case(nomination.player)}}{{b}}]({{state['nominations_url']}}/{{nomination.vote_post_id}}) | {{b}}{{nomination.yays}}{{b}} | {{b}}{{nomination.nays}}{{b}} | 
+| [{{b}}{{fix_case(nomination.player)}}{{b}}]({{state['nominations_url']}}{{nomination.vote_post_id}}) | {{b}}{{nomination.yays}}{{b}} | {{b}}{{nomination.nays}}{{b}} | 
 %end
 
 %end
