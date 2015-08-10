@@ -1,7 +1,7 @@
 
 [](###vote###)
 
-I am your friendly neighbourhood lynch vote bot!
+I am your friendly neighbourhood lynch vote bot for {{args.name_pretty}}!
 
 Please respond to this comment with \*\***vote: player**\*\* in order to cast your vote for their lynch!
 You can also \*\***vote: no lynch**\*\* if you would prefer there to be no lynch today.

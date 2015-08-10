@@ -38,6 +38,7 @@ parser.add_argument("--log_level", help="Log level to use", choices =
 parser.add_argument("--oneshot", action='store_true', help="run state transition once")
 parser.add_argument("--update_delay", type=int, default=5, help="time in minutes between state updates")
 parser.add_argument("--dry-run", action='store_true', help="Don't actually post anything")
+parser.add_argument("--oauth-login", action='store_true', help="perform Oauth login")
 
 Vote = collections.namedtuple("Vote", ["by", "target", "time"])
 Nomination = collections.namedtuple('Nomination', ['player', 'yays', 'nays', 'up_for_trial', 'vote_post_id', 'timestamp'])
@@ -731,6 +732,35 @@ class TraditionalBot(VoteBot):
         self.state = new_state
         l.debug("Done counting votes")
 
+def oauth_login(r):
+    r.set_oauth_app_info(client_id = creds.oauth_id,
+                         client_secret = creds.oauth_secret,
+                         redirect_uri="http://127.0.0.1:65010/authorize_callback")
+    url = r.get_authorize_url('PloungeMafiaVoteBot', 'identity submit privatemessages edit history read', True)
+    print(url)
+    key = raw_input('key>').strip()
+    access_info = r.get_access_information(key)
+    r.set_access_credentials(**access_info)
+    return access_info
+
+def oauth_load(r):
+    r.set_oauth_app_info(client_id = creds.oauth_id,
+                         client_secret = creds.oauth_secret,
+                         redirect_uri="http://127.0.0.1:65010/authorize_callback")
+    with open('oauth_info.json') as access_fd:
+        access_info = json.load(access_fd)
+        access_info['scope'] = set(access_info['scope'])
+    r.set_access_credentials(**access_info)
+    return access_info
+
+def oauth_refresh(r, access_info):
+    access_info = r.refresh_access_information(access_info['refresh_token'])
+    r.set_access_credentials(**access_info)
+    with open('oauth_info.json', 'w') as access_fd:
+        json_safe_access_info = dict(access_info)
+        json_safe_access_info['scope'] = list(json_safe_access_info['scope'])
+        json.dump(json_safe_access_info, access_fd, indent=2)
+    return access_info
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -740,6 +770,8 @@ if __name__ == "__main__":
     r = praw.Reddit(user_agent = "VoteCountBot by rcxdude")
 
     bots = []
+    last_refresh_time = None
+    oauth_access_info = None
 
 
     for game in config.games:
@@ -759,11 +791,18 @@ if __name__ == "__main__":
     while True:
         l.info("Attempting login")
         try:
-            r.login(creds.bot_username, creds.bot_password)
+            if args.oauth_login:
+                oauth_access_info = oauth_login(r)
+            else:
+                oauth_access_info = oauth_load(r)
+            #r.login(creds.bot_username, creds.bot_password)
             break
         except Exception as e:
             l.error(traceback.format_exc())
             time.sleep(60 * args.update_delay)
+
+    oauth_access_info = oauth_refresh(r, oauth_access_info)
+    last_refresh_time = time.time()
 
     l.info("Logged in")
 
@@ -776,4 +815,9 @@ if __name__ == "__main__":
                 l.error(traceback.format_exc())
         if args.oneshot:
             break
+        if last_refresh_time - time.time() > 40 * 60:
+            l.info("Refreshing OAuth information")
+            oauth_access_info = oauth_refresh(r, oauth_access_info)
+            last_refresh_time = time.time()
+        l.debug("done, sleeping for {} seconds".format(60 * args.update_delay))
         time.sleep(60 * args.update_delay)
