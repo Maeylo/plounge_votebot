@@ -815,7 +815,7 @@ if __name__ == "__main__":
                 l.error(traceback.format_exc())
         if args.oneshot:
             break
-        if last_refresh_time - time.time() > 40 * 60:
+        if time.time() - last_refresh_time > 40 * 60:
             l.info("Refreshing OAuth information")
             oauth_access_info = oauth_refresh(r, oauth_access_info)
             last_refresh_time = time.time()
